@@ -1,5 +1,6 @@
 target
 .git
-.env
+.env*
 secrets
-
+**/*.key
+**/*.pem

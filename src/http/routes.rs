@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     auth::{jwt::JwtService, oidc::IdentityProvider},
-    store::{OidcAttempt, SessionState, SessionStore},
+    store::{OidcAttempt, SessionState, SessionStore, StoreError},
 };
 
 #[derive(Clone)]
@@ -117,13 +117,19 @@ impl WebError {
     }
 }
 
-impl<E> From<E> for WebError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(error: E) -> Self {
-        let error = error.into();
+impl From<anyhow::Error> for WebError {
+    fn from(error: anyhow::Error) -> Self {
         tracing::warn!(error = ?error, "HTTP authentication request failed");
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: "authentication request failed".into(),
+        }
+    }
+}
+
+impl From<StoreError> for WebError {
+    fn from(error: StoreError) -> Self {
+        tracing::warn!(error = ?error, "HTTP login session request failed");
         Self::bad_request(error.to_string())
     }
 }
@@ -148,4 +154,16 @@ fn escape_html(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn internal_authentication_errors_are_not_exposed() {
+        let error = WebError::from(anyhow::anyhow!("client_secret=do-not-leak"));
+        assert_eq!(error.message, "authentication request failed");
+        assert!(!error.message.contains("do-not-leak"));
+    }
 }

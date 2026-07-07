@@ -16,7 +16,7 @@ The names belong to different protocol layers:
 
 This MVP supports OIDC discovery, authorization code flow with PKCE, state and nonce validation, session polling, user-token exchange, user lookup, and JWKS publication. The session and user directory are in memory and are lost on restart. One process supports one OIDC issuer/client.
 
-When `ALLOW_ALL_USERS=true`, authenticated users receive `read`, `write`, and `admin` on `urc-*`. When false, exchange is denied until an authorization policy backend is implemented.
+When `ALLOW_ALL_USERS=true`, authenticated users receive `read`, `write`, and `admin` on `urc-*`. The example defaults to `false`, which denies exchange until an authorization policy backend is implemented. Enable wildcard access only as an explicit MVP policy decision.
 
 ## Identity provider setup
 
@@ -42,7 +42,7 @@ Copy `.env.example` to `.env` and configure:
 | `HTTP_BIND_ADDR` | yes | Internal axum listener |
 | `OIDC_ISSUER_URL` | yes | Exact issuer advertised by OIDC discovery |
 | `OIDC_CLIENT_ID` | yes | Confidential OIDC client ID |
-| `OIDC_CLIENT_SECRET` | yes | Confidential OIDC client secret |
+| `OIDC_CLIENT_SECRET` or `OIDC_CLIENT_SECRET_FILE` | yes | Confidential OIDC client secret; file form is preferred in containers |
 | `OIDC_REDIRECT_URL` | yes | Exact public `/callback` URL |
 | `OIDC_SCOPES` | no | Space/comma-separated scopes; defaults to `openid profile email` |
 | `OIDC_CLIENT_AUTH_METHOD` | no | `client_secret_basic` (default) or `client_secret_post` |
@@ -68,7 +68,8 @@ Generate a development signing key:
 ```sh
 mkdir -p secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/jwt-private.pem
-chmod 600 secrets/jwt-private.pem
+printf '%s' 'your-oidc-client-secret' > secrets/oidc-client-secret
+chmod 600 secrets/jwt-private.pem secrets/oidc-client-secret
 ```
 
 Run directly with `cargo run`, or use the TLS-routing container example:
@@ -78,6 +79,10 @@ docker compose up --build
 ```
 
 The Rust process exposes separate plaintext internal listeners. Lore converts `ucs-auth://auth.example.com` to HTTPS gRPC, so production must terminate TLS and route HTTP/2 gRPC and browser traffic on one hostname. The included Caddy configuration sends `application/grpc` to tonic and other requests to axum.
+
+The Compose example mounts the JWT key and OIDC client secret through Compose secrets, runs the adapter with a read-only filesystem, drops Linux capabilities, and enables `no-new-privileges`. Environment-variable secrets remain supported for non-container deployments but can be exposed through container inspection, so prefer the `_FILE` setting in containers.
+
+The Dockerfile uses digest-pinned Rust and distroless bases, produces a stripped release binary, and runs as the distroless non-root user. Digest pins intentionally require periodic updates; follow the release checklist in [SECURITY.md](SECURITY.md) rather than leaving them static indefinitely.
 
 ## Lore server configuration
 

@@ -1,11 +1,11 @@
-use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, fs, net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use url::Url;
 
 use crate::auth::oidc::ClientAuthMethod;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub adapter_public_url: Url,
     pub grpc_bind_addr: SocketAddr,
@@ -36,7 +36,7 @@ impl Config {
         let http_bind_addr = get("HTTP_BIND_ADDR")?.parse()?;
         let oidc_issuer_url: Url = get("OIDC_ISSUER_URL")?.parse()?;
         let oidc_client_id = get("OIDC_CLIENT_ID")?;
-        let oidc_client_secret = get("OIDC_CLIENT_SECRET")?;
+        let oidc_client_secret = read_secret("OIDC_CLIENT_SECRET")?;
         let oidc_redirect_url = get("OIDC_REDIRECT_URL")?.parse()?;
         let oidc_scopes = parse_scopes(
             env::var("OIDC_SCOPES")
@@ -96,6 +96,24 @@ fn optional_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn read_secret(key: &str) -> Result<String> {
+    let file_key = format!("{key}_FILE");
+    if let Some(path) = optional_env(&file_key) {
+        return read_secret_file(&path, &file_key);
+    }
+    env::var(key).with_context(|| format!("missing {key} or {file_key}"))
+}
+
+fn read_secret_file(path: &str, description: &str) -> Result<String> {
+    let value = fs::read_to_string(path)
+        .with_context(|| format!("failed to read {description} at {path}"))?;
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        bail!("{description} points to an empty secret");
+    }
+    Ok(value)
+}
+
 fn parse_scopes(value: &str) -> Result<Vec<String>> {
     let scopes: Vec<_> = value
         .split(|character: char| character.is_whitespace() || character == ',')
@@ -110,6 +128,8 @@ fn parse_scopes(value: &str) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     #[test]
@@ -119,5 +139,21 @@ mod tests {
             ["openid", "profile", "email"]
         );
         assert!(parse_scopes("profile email").is_err());
+    }
+
+    #[test]
+    fn reads_and_trims_file_secret() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        writeln!(file, "super-secret").unwrap();
+        assert_eq!(
+            read_secret_file(file.path().to_str().unwrap(), "TEST_SECRET_FILE").unwrap(),
+            "super-secret"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_file_secret() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(read_secret_file(file.path().to_str().unwrap(), "TEST_SECRET_FILE").is_err());
     }
 }

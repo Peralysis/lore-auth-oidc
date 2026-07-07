@@ -1,6 +1,13 @@
 {$AUTH_HOST} {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        -Server
+    }
     @grpc header Content-Type application/grpc*
     reverse_proxy @grpc h2c://adapter:50051
     reverse_proxy adapter:8080
 }
-

@@ -2,15 +2,23 @@ services:
   adapter:
     build: .
     env_file: ${ADAPTER_ENV_FILE:-.env}
-    volumes:
-      - ./secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+    secrets:
+      - source: jwt-private-key
+        target: jwt-private.pem
+      - source: oidc-client-secret
+        target: oidc-client-secret
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "50051"
       - "8080"
     restart: unless-stopped
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     depends_on:
       - adapter
     environment:
@@ -22,8 +30,21 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
   caddy_data:
   caddy_config:
+
+secrets:
+  jwt-private-key:
+    file: ${JWT_PRIVATE_KEY_FILE:-./secrets/jwt-private.pem}
+  oidc-client-secret:
+    file: ${OIDC_CLIENT_SECRET_FILE_SOURCE:-./secrets/oidc-client-secret}
