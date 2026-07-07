@@ -1,0 +1,6 @@
+{$AUTH_HOST} {
+    @grpc header Content-Type application/grpc*
+    reverse_proxy @grpc h2c://adapter:50051
+    reverse_proxy adapter:8080
+}
+

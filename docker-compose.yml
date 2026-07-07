@@ -1,0 +1,29 @@
+services:
+  adapter:
+    build: .
+    env_file: ${ADAPTER_ENV_FILE:-.env}
+    volumes:
+      - ./secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+    expose:
+      - "50051"
+      - "8080"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - adapter
+    environment:
+      AUTH_HOST: ${AUTH_HOST:-auth.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
