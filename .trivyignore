@@ -1,0 +1,9 @@
+# Trivy ignore list for the published container image.
+#
+# Keep in sync with .cargo/audit.toml -- same reachability reasoning applies:
+# rsa's vulnerable private-key timing path is never exercised by this service.
+# The distroless runtime image ships only the compiled binary (no Cargo.lock),
+# so Trivy's Rust-crate scanning wouldn't normally surface this; listed here
+# so the scan gate stays green if that ever changes.
+RUSTSEC-2023-0071
+CVE-2023-49092

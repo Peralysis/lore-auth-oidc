@@ -54,13 +54,40 @@ cargo build --release
 ```
 
 If your change touches dependencies, also run `cargo audit` and review any
-findings against the accepted-advisory notes in [SECURITY.md](SECURITY.md).
+findings against the accepted-advisory notes in [`.cargo/audit.toml`](.cargo/audit.toml).
+
+## Commit messages & releases
+
+Releases are automated: [release-please](https://github.com/googleapis/release-please)
+watches `main`, opens a release PR that bumps the version and updates
+`CHANGELOG.md`, and CI publishes the container image to GHCR when that PR is
+merged. This only works if commits follow
+[Conventional Commits](https://www.conventionalcommits.org/):
+
+- `feat: ...` — new feature (minor version bump).
+- `fix: ...` — bug fix (patch version bump).
+- `feat!: ...` / a `BREAKING CHANGE:` footer — breaking change (major bump).
+- `chore:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:` — no release
+  triggered; still useful for a readable history.
+
+**Security-relevant dependency bumps must use `fix(deps):` and put the
+advisory ID in the subject line**, e.g.:
+
+```
+fix(deps): bump jsonwebtoken to 10.4.0 (CVE-2026-25537)
+```
+
+release-please's changelog entries are generated from the commit subject, not
+the body, so this is what makes the CVE/GHSA ID show up in `CHANGELOG.md` and
+the GitHub Release notes. A commit like `chore(deps): bump jsonwebtoken` would
+neither trigger a release nor surface the ID anywhere.
 
 ## Pull requests
 
 - Use the PR template and fill in the test plan.
 - Reference any related issue.
-- Keep commits meaningful; squash fixup commits before requesting review.
+- Keep commits meaningful and Conventional-Commits-formatted; squash fixup
+  commits before requesting review.
 - A maintainer will review and may request changes before merging.
 
 ## Vendored protobuf
