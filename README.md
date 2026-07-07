@@ -114,4 +114,10 @@ cargo test
 cargo build --release
 ```
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup
+and PR guidelines, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community
+standards. Report suspected vulnerabilities privately per [SECURITY.md](SECURITY.md).
+
 The project is licensed under MIT.
