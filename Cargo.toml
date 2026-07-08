@@ -1,6 +1,6 @@
 [package]
 name = "lore-auth-oidc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "OpenID Connect authentication adapter for Epic Games Lore"
