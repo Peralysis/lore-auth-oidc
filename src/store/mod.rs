@@ -54,11 +54,13 @@ pub enum StoreError {
     OidcNotStarted,
     #[error("OIDC state does not match")]
     InvalidOidcState,
+    #[error("too many pending login sessions")]
+    CapacityExceeded,
 }
 
 #[async_trait]
 pub trait SessionStore: Send + Sync {
-    async fn create_session(&self, client_state: String) -> AuthSession;
+    async fn create_session(&self, client_state: String) -> Result<AuthSession, StoreError>;
     async fn get_session(&self, code: &str) -> Result<AuthSession, StoreError>;
     async fn begin_oidc(&self, code: &str, attempt: OidcAttempt) -> Result<(), StoreError>;
     async fn session_for_oidc_state(&self, state: &str) -> Result<AuthSession, StoreError>;

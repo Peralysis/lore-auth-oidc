@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use subtle::ConstantTimeEq;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 
 use crate::{
@@ -45,6 +46,7 @@ impl AuthService {
         match error {
             StoreError::NotFound => Status::not_found(error.to_string()),
             StoreError::Expired => Status::deadline_exceeded(error.to_string()),
+            StoreError::CapacityExceeded => Status::resource_exhausted(error.to_string()),
             _ => Status::failed_precondition(error.to_string()),
         }
     }
@@ -84,7 +86,8 @@ impl UrcAuthApi for AuthService {
         let session = self
             .sessions
             .create_session(request.into_inner().client_state)
-            .await;
+            .await
+            .map_err(Self::map_store_error)?;
         Ok(Response::new(proto::StartAuthSessionResponse {
             login_url: format!("{}/login?session_code={}", self.public_url, session.code),
             session_code: session.code,
@@ -101,7 +104,12 @@ impl UrcAuthApi for AuthService {
             .get_session(&request.session_code)
             .await
             .map_err(Self::map_store_error)?;
-        if session.client_state != request.client_state {
+        let client_state_matches: bool = session
+            .client_state
+            .as_bytes()
+            .ct_eq(request.client_state.as_bytes())
+            .into();
+        if !client_state_matches {
             return Err(Status::permission_denied("client_state does not match"));
         }
         let user_token = match session.state {

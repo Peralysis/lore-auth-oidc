@@ -1,0 +1,44 @@
+# Minimal lore-auth-oidc Compose example for Microsoft Entra ID.
+#
+# 1. Register the web application as described in docs/providers/entra-id.md.
+# 2. Generate the secrets files (see the README "Run" section).
+# 3. Replace TENANT_ID and the placeholder hostnames below (use a tenant ID
+#    or verified tenant domain, not `common`), then run:
+#      docker compose -f docs/providers/compose/entra-id.yml up --build
+#
+# The adapter listens in plaintext; production must terminate TLS and route
+# gRPC and browser traffic on one hostname — see the root docker-compose.yml
+# and Caddyfile for the full TLS-routing example.
+
+services:
+  adapter:
+    build: ../../..
+    environment:
+      ADAPTER_PUBLIC_URL: https://auth.example.com
+      OIDC_ISSUER_URL: https://login.microsoftonline.com/TENANT_ID/v2.0
+      OIDC_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client-secret
+      OIDC_CLIENT_AUTH_METHOD: client_secret_post
+      OIDC_PROVIDER_NAME: entra-id
+      JWT_AUDIENCE: lore.example.com
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt-private.pem
+    secrets:
+      - source: jwt-private-key
+        target: jwt-private.pem
+      - source: oidc-client-secret
+        target: oidc-client-secret
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "50051"
+      - "8080"
+    restart: unless-stopped
+
+secrets:
+  jwt-private-key:
+    file: ../../../secrets/jwt-private.pem
+  oidc-client-secret:
+    file: ../../../secrets/oidc-client-secret

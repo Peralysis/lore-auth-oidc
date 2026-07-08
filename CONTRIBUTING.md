@@ -32,6 +32,10 @@ reporting process in [SECURITY.md](SECURITY.md) instead.
 4. Run the adapter with `cargo run`, or `docker compose up --build` for the
    TLS-routing container example.
 
+On Windows, building `aws-lc-sys` (pulled in by rustls and jsonwebtoken)
+requires NASM; either install NASM or set `AWS_LC_SYS_PREBUILT_NASM=1` to use
+the crate's prebuilt objects.
+
 ## Making changes
 
 - Keep changes focused; unrelated refactors make review harder.

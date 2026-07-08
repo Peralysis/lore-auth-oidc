@@ -15,4 +15,6 @@ OIDC_PROVIDER_NAME=entra-id
 
 Use a tenant ID or verified tenant domain rather than `common`: the returned token issuer must exactly match discovery for validation. Entra normally exposes `name` and `preferred_username`; the latter is displayable but must not replace the stable `sub` user ID.
 
+A minimal Compose example is available at [compose/entra-id.yml](compose/entra-id.yml).
+
 References: [Microsoft identity platform OIDC protocol](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc), [register a web application](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app).

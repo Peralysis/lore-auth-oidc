@@ -15,5 +15,7 @@ OIDC_USERNAME_CLAIM=email
 
 The username override is optional but useful because Auth0 commonly returns `nickname` and `email` rather than `preferred_username`. Use `nickname` instead if that is the desired Lore username. Custom Actions can add namespaced custom claims, which can also be selected by an override.
 
+A minimal Compose example is available at [compose/auth0.yml](compose/auth0.yml).
+
 References: [Auth0 application settings](https://auth0.com/docs/get-started/applications/application-settings), [OIDC scopes and claims](https://auth0.com/docs/get-started/apis/scopes/openid-connect-scopes).
 

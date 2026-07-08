@@ -16,4 +16,6 @@ OIDC_USERNAME_CLAIM=cognito:username
 
 `cognito:username` is a provider-specific ID-token claim and is supported by the generic claim override. The stable Lore user ID remains OIDC `sub`. Ensure the user pool exposes `name` or choose another display-name claim if names are not populated.
 
+A minimal Compose example is available at [compose/cognito.yml](compose/cognito.yml).
+
 References: [Cognito user-pool OIDC discovery and tokens](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-id-token.html), [user-pool app clients](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-client-apps.html).

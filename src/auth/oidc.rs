@@ -1,17 +1,36 @@
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use openidconnect::{
-    AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
+    EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
 use serde_json::{Map, Value};
+use tokio::sync::RwLock;
 
 use crate::store::UserIdentity;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const METADATA_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+
+type ConfiguredClient = CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
 
 #[derive(Clone, Debug)]
 pub struct AuthorizationRequest {
@@ -59,67 +78,94 @@ impl FromStr for ClientAuthMethod {
     }
 }
 
+pub struct OidcOptions {
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_url: String,
+    pub scopes: Vec<String>,
+    pub display_name_claim: Option<String>,
+    pub username_claim: Option<String>,
+    pub client_auth_method: ClientAuthMethod,
+    /// Additional PEM root certificates to trust, for identity providers
+    /// served through a reverse proxy with a private CA.
+    pub tls_root_ca_pem: Option<Vec<u8>>,
+}
+
 #[derive(Clone)]
 pub struct OidcProvider {
-    issuer_url: String,
-    client_id: String,
-    client_secret: String,
-    redirect_url: String,
-    scopes: Vec<String>,
-    display_name_claim: Option<String>,
-    username_claim: Option<String>,
-    client_auth_method: ClientAuthMethod,
+    options: Arc<OidcOptions>,
     http_client: reqwest::Client,
+    metadata_cache: Arc<RwLock<Option<(Instant, CoreProviderMetadata)>>>,
 }
 
 impl OidcProvider {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        issuer_url: String,
-        client_id: String,
-        client_secret: String,
-        redirect_url: String,
-        scopes: Vec<String>,
-        display_name_claim: Option<String>,
-        username_claim: Option<String>,
-        client_auth_method: ClientAuthMethod,
-    ) -> Result<Self> {
-        let http_client = reqwest::ClientBuilder::new()
+    pub fn new(options: OidcOptions) -> Result<Self> {
+        let mut builder = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT);
+        if let Some(pem) = &options.tls_root_ca_pem {
+            let certificates = reqwest::Certificate::from_pem_bundle(pem)
+                .context("OIDC TLS root CA file is not a valid PEM certificate bundle")?;
+            if certificates.is_empty() {
+                bail!("OIDC TLS root CA file contains no certificates");
+            }
+            for certificate in certificates {
+                builder = builder.add_root_certificate(certificate);
+            }
+        }
+        let http_client = builder
             .build()
             .context("failed to construct OIDC HTTP client")?;
         Ok(Self {
-            issuer_url,
-            client_id,
-            client_secret,
-            redirect_url,
-            scopes,
-            display_name_claim,
-            username_claim,
-            client_auth_method,
+            options: Arc::new(options),
             http_client,
+            metadata_cache: Arc::new(RwLock::new(None)),
         })
     }
 
+    /// Runs OIDC discovery once so that misconfiguration fails at startup
+    /// instead of on the first login attempt.
+    pub async fn preload(&self) -> Result<()> {
+        self.metadata().await.map(|_| ())
+    }
+
     async fn metadata(&self) -> Result<CoreProviderMetadata> {
-        let issuer = IssuerUrl::new(self.issuer_url.clone())?;
-        CoreProviderMetadata::discover_async(issuer, &self.http_client)
+        if let Some((fetched_at, metadata)) = self.metadata_cache.read().await.as_ref()
+            && fetched_at.elapsed() < METADATA_CACHE_TTL
+        {
+            return Ok(metadata.clone());
+        }
+        let mut cache = self.metadata_cache.write().await;
+        if let Some((fetched_at, metadata)) = cache.as_ref()
+            && fetched_at.elapsed() < METADATA_CACHE_TTL
+        {
+            return Ok(metadata.clone());
+        }
+        let issuer = IssuerUrl::new(self.options.issuer_url.clone())?;
+        let metadata = CoreProviderMetadata::discover_async(issuer, &self.http_client)
             .await
-            .context("OIDC discovery failed")
+            .context("OIDC discovery failed")?;
+        *cache = Some((Instant::now(), metadata.clone()));
+        Ok(metadata)
+    }
+
+    async fn client(&self) -> Result<ConfiguredClient> {
+        Ok(CoreClient::from_provider_metadata(
+            self.metadata().await?,
+            ClientId::new(self.options.client_id.clone()),
+            Some(ClientSecret::new(self.options.client_secret.clone())),
+        )
+        .set_auth_type(self.options.client_auth_method.auth_type())
+        .set_redirect_uri(RedirectUrl::new(self.options.redirect_url.clone())?))
     }
 }
 
 #[async_trait]
 impl IdentityProvider for OidcProvider {
     async fn authorization_url(&self) -> Result<AuthorizationRequest> {
-        let client = CoreClient::from_provider_metadata(
-            self.metadata().await?,
-            ClientId::new(self.client_id.clone()),
-            Some(ClientSecret::new(self.client_secret.clone())),
-        )
-        .set_auth_type(self.client_auth_method.auth_type())
-        .set_redirect_uri(RedirectUrl::new(self.redirect_url.clone())?);
-
+        let client = self.client().await?;
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let mut request = client
             .authorize_url(
@@ -128,7 +174,7 @@ impl IdentityProvider for OidcProvider {
                 Nonce::new_random,
             )
             .set_pkce_challenge(pkce_challenge);
-        for scope in &self.scopes {
+        for scope in &self.options.scopes {
             request = request.add_scope(Scope::new(scope.clone()));
         }
         let (url, csrf, nonce) = request.url();
@@ -147,14 +193,7 @@ impl IdentityProvider for OidcProvider {
         nonce: &str,
         pkce_verifier: &str,
     ) -> Result<UserIdentity> {
-        let client = CoreClient::from_provider_metadata(
-            self.metadata().await?,
-            ClientId::new(self.client_id.clone()),
-            Some(ClientSecret::new(self.client_secret.clone())),
-        )
-        .set_auth_type(self.client_auth_method.auth_type())
-        .set_redirect_uri(RedirectUrl::new(self.redirect_url.clone())?);
-
+        let client = self.client().await?;
         let response = client
             .exchange_code(AuthorizationCode::new(code.to_owned()))?
             .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier.to_owned()))
@@ -174,13 +213,13 @@ impl IdentityProvider for OidcProvider {
         let user_id = claims.subject().to_string();
         let preferred_username = resolve_claim(
             &raw_claims,
-            self.username_claim.as_deref(),
+            self.options.username_claim.as_deref(),
             &["preferred_username", "email", "name"],
             &user_id,
         )?;
         let display_name = resolve_claim(
             &raw_claims,
-            self.display_name_claim.as_deref(),
+            self.options.display_name_claim.as_deref(),
             &["name", "preferred_username", "email"],
             &user_id,
         )?;
@@ -244,6 +283,20 @@ mod tests {
 
     use super::*;
 
+    fn options() -> OidcOptions {
+        OidcOptions {
+            issuer_url: "https://identity.example.com".into(),
+            client_id: "client".into(),
+            client_secret: "secret".into(),
+            redirect_url: "https://auth.example.com/callback".into(),
+            scopes: vec!["openid".into()],
+            display_name_claim: None,
+            username_claim: None,
+            client_auth_method: ClientAuthMethod::ClientSecretBasic,
+            tls_root_ca_pem: None,
+        }
+    }
+
     fn claims(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
     }
@@ -294,5 +347,13 @@ mod tests {
             ClientAuthMethod::ClientSecretPost
         ));
         assert!("private_key_jwt".parse::<ClientAuthMethod>().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_tls_root_ca_bundle() {
+        let mut invalid = options();
+        invalid.tls_root_ca_pem = Some(b"not a certificate".to_vec());
+        assert!(OidcProvider::new(invalid).is_err());
+        assert!(OidcProvider::new(options()).is_ok());
     }
 }

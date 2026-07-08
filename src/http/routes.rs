@@ -27,7 +27,12 @@ pub fn router(state: AppState) -> Router {
         .route("/login", get(login))
         .route("/callback", get(callback))
         .route("/.well-known/jwks.json", get(jwks))
+        .route("/healthz", get(healthz))
         .with_state(state)
+}
+
+async fn healthz() -> impl IntoResponse {
+    axum::Json(serde_json::json!({ "status": "ok" }))
 }
 
 #[derive(Deserialize)]
