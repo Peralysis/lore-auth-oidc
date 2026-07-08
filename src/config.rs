@@ -205,7 +205,10 @@ mod tests {
             parse_audiences("localhost 127.0.0.1").unwrap(),
             ["localhost", "127.0.0.1"]
         );
-        assert_eq!(parse_audiences("lore.example.com").unwrap(), ["lore.example.com"]);
+        assert_eq!(
+            parse_audiences("lore.example.com").unwrap(),
+            ["lore.example.com"]
+        );
         assert!(parse_audiences("").is_err());
         assert!(parse_audiences("   ").is_err());
     }
