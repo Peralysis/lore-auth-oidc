@@ -1,0 +1,43 @@
+# Minimal lore-auth-oidc Compose example for Authentik.
+#
+# 1. Create the OAuth2/OpenID provider as described in docs/providers/authentik.md.
+# 2. Generate the secrets files (see the README "Run" section).
+# 3. Replace the placeholder hostnames below (the issuer includes the
+#    application slug and trailing slash), then run:
+#      docker compose -f docs/providers/compose/authentik.yml up --build
+#
+# The adapter listens in plaintext; production must terminate TLS and route
+# gRPC and browser traffic on one hostname — see the root docker-compose.yml
+# and Caddyfile for the full TLS-routing example.
+
+services:
+  adapter:
+    build: ../../..
+    environment:
+      ADAPTER_PUBLIC_URL: https://auth.example.com
+      OIDC_ISSUER_URL: https://authentik.example.com/application/o/lore/
+      OIDC_CLIENT_ID: lore-auth-oidc
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client-secret
+      OIDC_PROVIDER_NAME: authentik
+      JWT_AUDIENCE: lore.example.com
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt-private.pem
+    secrets:
+      - source: jwt-private-key
+        target: jwt-private.pem
+      - source: oidc-client-secret
+        target: oidc-client-secret
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "50051"
+      - "8080"
+    restart: unless-stopped
+
+secrets:
+  jwt-private-key:
+    file: ../../../secrets/jwt-private.pem
+  oidc-client-secret:
+    file: ../../../secrets/oidc-client-secret

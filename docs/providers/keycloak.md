@@ -15,5 +15,7 @@ OIDC_PROVIDER_NAME=keycloak
 
 Keycloak normally supplies `name`, `preferred_username`, and `email` through its built-in client scopes. If a realm has customized scopes or mappers, ensure these claims are present or set the claim overrides explicitly.
 
+A minimal Compose example is available at [compose/keycloak.yml](compose/keycloak.yml).
+
 References: [Keycloak OIDC endpoints](https://www.keycloak.org/securing-apps/oidc-layers), [Keycloak server administration](https://www.keycloak.org/docs/latest/server_admin/).
 

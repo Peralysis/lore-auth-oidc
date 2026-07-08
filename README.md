@@ -16,7 +16,7 @@ The names belong to different protocol layers:
 
 This MVP supports OIDC discovery, authorization code flow with PKCE, state and nonce validation, session polling, user-token exchange, user lookup, and JWKS publication. The session and user directory are in memory and are lost on restart. One process supports one OIDC issuer/client.
 
-When `ALLOW_ALL_USERS=true`, authenticated users receive `read`, `write`, and `admin` on `urc-*`. The example defaults to `false`, which denies exchange until an authorization policy backend is implemented. Enable wildcard access only as an explicit MVP policy decision.
+When `ALLOW_ALL_USERS=true`, authenticated users receive `read`, `write`, and `admin` on exactly the `urc-{repository_id}` resources their client requests during token exchange. It defaults to `false`, which denies exchange until an authorization policy backend is implemented. Enable it only as an explicit MVP policy decision.
 
 ## Identity provider setup
 
@@ -29,33 +29,36 @@ Create a confidential OIDC web application at your provider. Enable authorizatio
 - [Okta](docs/providers/okta.md)
 - [Amazon Cognito](docs/providers/cognito.md)
 
-Other providers work when they publish standard OIDC discovery metadata, support confidential authorization-code clients with PKCE, and return an ID token.
+Each guide links a minimal Compose example in [docs/providers/compose/](docs/providers/compose/) with that provider's environment pre-filled. Other providers work when they publish standard OIDC discovery metadata, support confidential authorization-code clients with PKCE, and return an ID token.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env` and configure. Six variables are required; everything else has a sensible default or is derived from `ADAPTER_PUBLIC_URL`:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `ADAPTER_PUBLIC_URL` | yes | Public HTTPS origin used in Lore login URLs |
-| `GRPC_BIND_ADDR` | yes | Internal tonic listener |
-| `HTTP_BIND_ADDR` | yes | Internal axum listener |
 | `OIDC_ISSUER_URL` | yes | Exact issuer advertised by OIDC discovery |
 | `OIDC_CLIENT_ID` | yes | Confidential OIDC client ID |
 | `OIDC_CLIENT_SECRET` or `OIDC_CLIENT_SECRET_FILE` | yes | Confidential OIDC client secret; file form is preferred in containers |
-| `OIDC_REDIRECT_URL` | yes | Exact public `/callback` URL |
+| `JWT_AUDIENCE` | yes | Lore server hostname(s) accepted as `aud`; comma/space-separated for a server reachable under multiple aliases (e.g. `localhost,127.0.0.1`) |
+| `JWT_PRIVATE_KEY_PATH` | yes | RSA PKCS#8 or PKCS#1 PEM signing key |
+| `OIDC_REDIRECT_URL` | no | Public `/callback` URL; defaults to `{ADAPTER_PUBLIC_URL}/callback` |
+| `JWT_ISSUER` | no | `iss` in adapter-issued Lore JWTs; defaults to `ADAPTER_PUBLIC_URL` |
+| `JWT_KEY_ID` | no | `kid` published through JWKS; defaults to the key's RFC 7638 JWK thumbprint |
+| `GRPC_BIND_ADDR` | no | Internal tonic listener; defaults to `0.0.0.0:50051` |
+| `HTTP_BIND_ADDR` | no | Internal axum listener; defaults to `0.0.0.0:8080` |
 | `OIDC_SCOPES` | no | Space/comma-separated scopes; defaults to `openid profile email` |
 | `OIDC_CLIENT_AUTH_METHOD` | no | `client_secret_basic` (default) or `client_secret_post` |
 | `OIDC_DISPLAY_NAME_CLAIM` | no | Require this non-empty string claim as Lore display name |
 | `OIDC_USERNAME_CLAIM` | no | Require this non-empty string claim as preferred username |
 | `OIDC_PROVIDER_NAME` | no | Authz JWT `idp`; defaults to the issuer URL |
-| `JWT_ISSUER` | yes | `iss` in adapter-issued Lore JWTs |
-| `JWT_AUDIENCE` | yes | Lore server hostname accepted as `aud` |
-| `JWT_PRIVATE_KEY_PATH` | yes | RSA PKCS#8 or PKCS#1 PEM signing key |
-| `JWT_KEY_ID` | yes | Stable `kid` published through JWKS |
-| `SESSION_TTL_SECONDS` | yes | Pending browser-login lifetime |
-| `ALLOW_ALL_USERS` | yes | MVP wildcard authorization switch |
-| `LORE_ENV` | yes | Lore environment encoded in JWTs |
+| `OIDC_TLS_ROOT_CA_FILE` | no | Extra PEM root CA bundle to trust when the issuer uses a private CA |
+| `SESSION_TTL_SECONDS` | no | Pending browser-login lifetime; defaults to `600` |
+| `ALLOW_ALL_USERS` | no | MVP authorization switch; defaults to `false` |
+| `LORE_ENV` | no | Lore environment encoded in JWTs; defaults to `production` |
+
+The adapter runs OIDC discovery at startup and exits with a clear error when `OIDC_ISSUER_URL` is wrong or unreachable, rather than failing on the first login attempt. If the identity provider sits behind a reverse proxy or TLS-terminating gateway with a private CA, point `OIDC_TLS_ROOT_CA_FILE` at a PEM bundle of the additional root certificates; the system roots remain trusted alongside them.
 
 OIDC `sub` is always the stable Lore user ID. Without overrides, display name resolves through `name`, `preferred_username`, `email`, then `sub`; username resolves through `preferred_username`, `email`, `name`, then `sub`. A configured override is strict: login fails if that claim is absent, empty, or not a string.
 
@@ -98,13 +101,14 @@ jwt_audience = ["lore.example.com"]
 endpoint = "https://auth.example.com/.well-known/jwks.json"
 ```
 
-`JWT_ISSUER` and `JWT_AUDIENCE` must match these settings. JWT timestamps are Unix seconds; official protobuf `UserToken.expires_at` values are Unix milliseconds, as expected by Lore.
+`JWT_ISSUER` and `JWT_AUDIENCE` must match these settings — if the Lore server is reachable under more than one hostname (e.g. `localhost` and `127.0.0.1` for the same local deployment), list all of them in both `JWT_AUDIENCE` and `jwt_audience`; a token is valid for any hostname a client used to reach it, not just the first. JWT timestamps are Unix seconds; official protobuf `UserToken.expires_at` values are Unix milliseconds, as expected by Lore.
 
 ## Surfaces and development
 
 - `GET /login?session_code=...`
 - `GET /callback`
 - `GET /.well-known/jwks.json`
+- `GET /healthz`
 - Official `epic_urc.UrcAuthApi` from `proto/auth_api.proto`
 
 ```sh

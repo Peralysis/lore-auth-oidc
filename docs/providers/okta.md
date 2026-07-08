@@ -14,5 +14,7 @@ OIDC_PROVIDER_NAME=okta
 
 The org authorization server uses `https://example.okta.com`; a custom authorization server uses `/oauth2/{authorizationServerId}`. Do not mix discovery and authorization endpoints from different issuers. Standard profile claims normally provide `name`, `preferred_username`, and `email`.
 
+A minimal Compose example is available at [compose/okta.yml](compose/okta.yml).
+
 References: [Okta redirect-model web app guide](https://developer.okta.com/docs/guides/sign-into-web-app-redirect/), [authorization server issuer URIs](https://developer.okta.com/docs/concepts/auth-servers/).
 
