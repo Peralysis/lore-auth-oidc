@@ -1,0 +1,17 @@
+# cargo-audit configuration.
+#
+# Only add an advisory ID here after confirming it's not reachable in this
+# codebase's actual code paths, and note the reasoning inline. Re-check the
+# reasoning whenever the affected dependency or the code that uses it changes.
+[advisories]
+ignore = [
+    # RSA Marvin Attack (timing side-channel on RSA private-key ops). Applies
+    # transitively via openidconnect 4.0.1 and directly via rsa 0.9.10; no
+    # fixed rsa release exists yet. This service only uses the rsa crate to
+    # parse the adapter's PEM key and derive its public modulus/exponent for
+    # the JWKS endpoint (src/auth/jwt.rs) -- the vulnerable private-key path
+    # is never exercised. JWT signing goes through jsonwebtoken's aws_lc_rs
+    # backend instead. Re-verify if openidconnect, rsa, or JWT key handling
+    # changes, or once a patched rsa release ships.
+    "RUSTSEC-2023-0071",
+]
